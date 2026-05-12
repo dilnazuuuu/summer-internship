@@ -17,6 +17,16 @@ Open:
 http://127.0.0.1:8000
 ```
 
+## Railway
+
+Railway can run the app with:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port $PORT
+```
+
+`main.py` also exports the same app as `main:app` for platforms that expect that default.
+
 ## PaddleOCR mode
 
 Install the optional PaddleOCR packages if you want to convert scans and images:
