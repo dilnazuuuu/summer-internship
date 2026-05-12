@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+failed_convert.txt
+failed_paddle_convert.txt

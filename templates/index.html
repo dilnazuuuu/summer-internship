@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Document to Markdown</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1f2933;
+        --muted: #5f6b7a;
+        --line: #d8dee7;
+        --accent: #176b87;
+        --accent-strong: #0f5267;
+        --accent-soft: #e6f3f7;
+        --focus: #c46a24;
+        --danger: #a33a2a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(90deg, rgba(31, 41, 51, 0.045) 1px, transparent 1px),
+          linear-gradient(0deg, rgba(31, 41, 51, 0.045) 1px, transparent 1px),
+          var(--bg);
+        background-size: 32px 32px;
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(920px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 40px 0;
+      }
+
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 20px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.12;
+        font-weight: 760;
+        letter-spacing: 0;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .converter {
+        display: grid;
+        gap: 20px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 18px 40px rgba(31, 41, 51, 0.08);
+      }
+
+      .upload {
+        position: relative;
+        display: grid;
+        place-items: center;
+        min-height: 220px;
+        padding: 26px;
+        border: 2px dashed #aab7c4;
+        border-radius: 8px;
+        background: #fbfcfd;
+        transition:
+          border-color 160ms ease,
+          background 160ms ease;
+      }
+
+      .upload:focus-within,
+      .upload:hover {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .upload input {
+        position: absolute;
+        inset: 0;
+        cursor: pointer;
+        opacity: 0;
+      }
+
+      .upload-inner {
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+        text-align: center;
+        pointer-events: none;
+      }
+
+      .doc-icon {
+        width: 54px;
+        height: 68px;
+        border: 2px solid var(--accent);
+        border-radius: 6px;
+        background:
+          linear-gradient(135deg, transparent 0 73%, #b9e0ea 73% 100%),
+          #ffffff;
+      }
+
+      .upload-title {
+        font-size: 18px;
+        font-weight: 720;
+      }
+
+      .upload-name {
+        min-height: 20px;
+        color: var(--muted);
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      select,
+      input[type="text"] {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #ffffff;
+        color: var(--text);
+        font: inherit;
+        font-size: 15px;
+        padding: 0 11px;
+      }
+
+      select:focus,
+      input[type="text"]:focus,
+      button:focus-visible {
+        outline: 3px solid rgba(196, 106, 36, 0.28);
+        outline-offset: 2px;
+        border-color: var(--focus);
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-top: 1px solid var(--line);
+        padding-top: 20px;
+      }
+
+      .note {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 148px;
+        min-height: 44px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #ffffff;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 720;
+      }
+
+      button:hover {
+        background: var(--accent-strong);
+      }
+
+      button:disabled {
+        cursor: wait;
+        background: #8ba4ad;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      @media (max-width: 760px) {
+        main {
+          width: min(100vw - 24px, 920px);
+          padding: 20px 0;
+        }
+
+        header,
+        .actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .converter {
+          padding: 16px;
+        }
+
+        h1 {
+          font-size: 24px;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Document to Markdown</h1>
+        <div class="status" id="status">Ready</div>
+      </header>
+
+      <form class="converter" action="/convert" method="post" enctype="multipart/form-data">
+        <label class="upload" for="file">
+          <input id="file" name="file" type="file" required />
+          <span class="upload-inner">
+            <span class="doc-icon" aria-hidden="true"></span>
+            <span class="upload-title">Choose a document</span>
+            <span class="upload-name" id="file-name">PDF, Word, Excel, PowerPoint, Markdown, or image</span>
+          </span>
+        </label>
+
+        <div class="grid">
+          <label>
+            Converter
+            <select id="engine" name="engine">
+              <option value="standard">Standard</option>
+              <option value="paddle">PaddleOCR</option>
+            </select>
+          </label>
+
+          <label class="paddle-field hidden">
+            Paddle mode
+            <select id="paddle-mode" name="paddle_mode">
+              <option value="ocr">OCR text</option>
+              <option value="structure">Structure (advanced)</option>
+            </select>
+          </label>
+
+          <label class="paddle-field hidden">
+            Language
+            <select name="lang">
+              <option value="ru">Russian</option>
+              <option value="kk">Kazakh</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+
+          <label class="paddle-field hidden">
+            Device
+            <select name="device">
+              <option value="cpu">CPU (recommended)</option>
+              <option value="gpu">GPU (server only)</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="actions">
+          <div class="note" id="note">Standard is best for PDFs and Office documents with selectable text.</div>
+          <button type="submit" id="submit">Convert</button>
+        </div>
+      </form>
+    </main>
+
+    <script>
+      const form = document.querySelector("form");
+      const fileInput = document.getElementById("file");
+      const fileName = document.getElementById("file-name");
+      const engine = document.getElementById("engine");
+      const paddleMode = document.getElementById("paddle-mode");
+      const status = document.getElementById("status");
+      const note = document.getElementById("note");
+      const submit = document.getElementById("submit");
+      const paddleFields = Array.from(document.querySelectorAll(".paddle-field"));
+
+      function updateEngine() {
+        const usePaddle = engine.value === "paddle";
+        paddleFields.forEach((field) => field.classList.toggle("hidden", !usePaddle));
+        if (!usePaddle) {
+          note.textContent = "Standard is best for PDFs and Office documents with selectable text.";
+          return;
+        }
+        note.textContent = paddleMode.value === "structure"
+          ? "Structure tries to preserve layout and tables, but it is much heavier and needs a stronger server."
+          : "OCR text is the reliable PaddleOCR mode for scans, images, and non-selectable PDFs.";
+      }
+
+      fileInput.addEventListener("change", () => {
+        fileName.textContent = fileInput.files[0]?.name || "PDF, Word, Excel, PowerPoint, Markdown, or image";
+      });
+
+      engine.addEventListener("change", updateEngine);
+      paddleMode.addEventListener("change", updateEngine);
+
+      form.addEventListener("submit", () => {
+        status.textContent = "Converting";
+        submit.disabled = true;
+        submit.textContent = "Working...";
+      });
+
+      window.addEventListener("pageshow", () => {
+        status.textContent = "Ready";
+        submit.disabled = false;
+        submit.textContent = "Convert";
+      });
+
+      updateEngine();
+    </script>
+  </body>
+</html>

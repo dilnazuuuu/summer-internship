@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+tqdm
+pymupdf
+pymupdf4llm
+mammoth
+openpyxl
+python-pptx
+pdf2image
+pytesseract
