@@ -22,20 +22,17 @@ http://127.0.0.1:8000
 Railway can run the app with:
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port $PORT
+uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
-`main.py` also exports the same app as `main:app` for platforms that expect that default.
+`main.py` exports the FastAPI app for Railway and other platforms that expect
+that default entry point.
 
 ## PaddleOCR mode
 
-Install the optional PaddleOCR packages if you want to convert scans and images:
-
-```bash
-python -m pip install -r requirements-paddle.txt
-```
-
-Use `PaddleOCR` in the web form for scanned PDFs and image files.
+PaddleOCR dependencies are included in `requirements.txt` so Railway and local
+setups use one dependency list. Use `PaddleOCR` in the web form for scanned PDFs
+and image files.
 
 For local testing, choose `OCR text` first. `Structure` mode is heavier because
 it loads extra layout, table, and formula models.
