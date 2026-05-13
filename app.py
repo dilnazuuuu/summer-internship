@@ -7,6 +7,11 @@ import shutil
 import tempfile
 from pathlib import Path
 
+# Keep Paddle in stable CPU mode on Railway before any OCR-related imports.
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_enable_pir_api"] = "0"
+os.environ["OMP_NUM_THREADS"] = "1"
+
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 
