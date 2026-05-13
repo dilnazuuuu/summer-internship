@@ -217,7 +217,7 @@
 
       .progress-track {
         position: relative;
-        height: 10px;
+        height: 14px;
         overflow: hidden;
         border-radius: 999px;
         background: var(--accent-soft);
@@ -238,7 +238,7 @@
         left: 0;
         width: 0;
         animation: none;
-        transition: width 240ms ease;
+        transition: width 320ms ease;
       }
 
       .progress.done .progress-fill {
@@ -284,9 +284,42 @@
         background: var(--accent-strong);
       }
 
+      .secondary-button {
+        min-width: 0;
+        border: 1px solid var(--line);
+        background: #ffffff;
+        color: var(--accent);
+      }
+
+      .secondary-button:hover {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .retry-button {
+        color: var(--danger);
+      }
+
+      .result-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
       button:disabled {
         cursor: wait;
         background: #8ba4ad;
+      }
+
+      .secondary-button:disabled {
+        border-color: var(--line);
+        background: #eef2f5;
+        color: var(--muted);
+      }
+
+      input:disabled,
+      select:disabled {
+        cursor: not-allowed;
       }
 
       .hidden {
@@ -329,6 +362,10 @@
         button {
           width: 100%;
         }
+
+        .result-actions {
+          flex-direction: column;
+        }
       }
     </style>
   </head>
@@ -344,7 +381,7 @@
           <input id="file" name="file" type="file" required />
           <span class="upload-inner">
             <span class="doc-icon" aria-hidden="true"></span>
-            <span class="upload-title">Choose a document</span>
+            <span class="upload-title">Upload a document</span>
             <span class="upload-name" id="file-name">PDF, Word, Excel, PowerPoint, Markdown, or image</span>
           </span>
         </label>
@@ -391,6 +428,11 @@
           <div class="progress-track" role="progressbar" aria-label="Conversion progress">
             <span class="progress-fill"></span>
           </div>
+          <div class="result-actions hidden" id="result-actions">
+            <button class="secondary-button" id="download-button" type="button">Download file</button>
+            <button class="secondary-button" id="new-file-button" type="button">Upload another file</button>
+            <button class="secondary-button retry-button hidden" id="retry-button" type="button">Retry</button>
+          </div>
         </div>
       </form>
     </main>
@@ -409,8 +451,14 @@
       const progressDetail = document.getElementById("progress-detail");
       const progressTrack = document.querySelector(".progress-track");
       const progressFill = document.querySelector(".progress-fill");
+      const resultActions = document.getElementById("result-actions");
+      const downloadButton = document.getElementById("download-button");
+      const newFileButton = document.getElementById("new-file-button");
+      const retryButton = document.getElementById("retry-button");
       const paddleFields = Array.from(document.querySelectorAll(".paddle-field"));
+      const controlFields = Array.from(form.querySelectorAll("input, select"));
       let pollTimer = null;
+      let latestDownloadUrl = "";
 
       function updateEngine() {
         const usePaddle = engine.value === "paddle";
@@ -419,12 +467,18 @@
           note.textContent = "Standard is best for PDFs and Office documents with selectable text.";
           return;
         }
-        note.textContent = "Tesseract OCR is the lightweight mode for scans, images, and non-selectable PDFs.";
+        note.textContent = "Tesseract OCR works best for scanned PDFs and images.";
       }
 
       function setBusy(isBusy) {
         submit.disabled = isBusy;
-        submit.textContent = isBusy ? "Working..." : "Convert";
+        submit.textContent = isBusy ? "Processing..." : "Convert";
+      }
+
+      function setControlsDisabled(isDisabled) {
+        controlFields.forEach((field) => {
+          field.disabled = isDisabled;
+        });
       }
 
       function setProgress(title, detail, state = "", percent = null) {
@@ -448,10 +502,21 @@
         progressDetail.textContent = detail;
       }
 
-      function hideProgress() {
+      function setResultActions(mode, downloadUrl = "") {
+        latestDownloadUrl = downloadUrl || latestDownloadUrl;
+        resultActions.classList.toggle("hidden", !mode);
+        downloadButton.classList.toggle("hidden", mode !== "done");
+        newFileButton.classList.toggle("hidden", mode !== "done");
+        retryButton.classList.toggle("hidden", mode !== "failed");
+      }
+
+      function resetProgress() {
+        stopPolling();
+        latestDownloadUrl = "";
         progress.classList.add("hidden");
         progress.classList.remove("done", "failed", "determinate");
         progressFill.style.width = "";
+        setResultActions("");
       }
 
       function stopPolling() {
@@ -489,20 +554,25 @@
 
         if (job.status === "done") {
           stopPolling();
-          status.textContent = "Ready";
+          status.textContent = "Done";
           const detail = hasPageProgress
-            ? `${totalPages}/${totalPages} pages processed. Download starting...`
-            : "Download starting...";
-          setProgress("Ready", detail, "done", 100);
-          downloadResult(job.download_url || downloadUrl);
+            ? `Page ${totalPages} of ${totalPages} completed. Preparing download...`
+            : "Preparing download...";
+          latestDownloadUrl = job.download_url || downloadUrl;
+          setProgress("Done! Your file is ready", detail, "done", 100);
+          setResultActions("done", latestDownloadUrl);
+          downloadResult(latestDownloadUrl);
           setBusy(false);
+          submit.disabled = true;
           return;
         }
 
         if (job.status === "failed") {
           stopPolling();
           status.textContent = "Failed";
-          setProgress("Failed", job.error || "Conversion failed.", "failed", hasPercent ? progressPercent : null);
+          setProgress("Something went wrong", job.error || "Conversion failed.", "failed", hasPercent ? progressPercent : null);
+          setResultActions("failed");
+          setControlsDisabled(false);
           setBusy(false);
           return;
         }
@@ -510,23 +580,75 @@
         const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
         status.textContent = "Processing";
         if (hasPageProgress && hasPercent) {
+          const nextPage = Math.min(totalPages, currentPage + 1);
+          const detail = currentPage >= totalPages
+            ? `Page ${totalPages} of ${totalPages} completed. Preparing download...`
+            : `Processing page ${nextPage} of ${totalPages}...`;
           setProgress(
-            "Processing",
-            `${currentPage}/${totalPages} pages processed (${Math.round(progressPercent)}%)`,
+            "Processing your document...",
+            detail,
             "",
             progressPercent,
           );
         } else {
-          setProgress("Processing", `Still working... ${elapsedSeconds}s elapsed`);
+          setProgress("Processing your document...", `This can take a minute for scanned files. ${elapsedSeconds}s elapsed`);
         }
         pollTimer = setTimeout(() => {
           pollStatus(statusUrl, downloadUrl, startedAt).catch((error) => {
             stopPolling();
             status.textContent = "Failed";
-            setProgress("Failed", error.message, "failed");
+            setProgress("Something went wrong", error.message, "failed");
+            setResultActions("failed");
+            setControlsDisabled(false);
             setBusy(false);
           });
         }, 2000);
+      }
+
+      function resetForm() {
+        form.reset();
+        fileName.textContent = "PDF, Word, Excel, PowerPoint, Markdown, or image";
+        status.textContent = "Ready";
+        setBusy(false);
+        setControlsDisabled(false);
+        resetProgress();
+        updateEngine();
+      }
+
+      async function startConversion() {
+        if (!fileInput.files.length) {
+          status.textContent = "Ready";
+          setProgress("Upload a document", "Choose a file before converting.", "failed");
+          return;
+        }
+
+        const formData = new FormData(form);
+        stopPolling();
+        latestDownloadUrl = "";
+        setResultActions("");
+        setControlsDisabled(true);
+        setBusy(true);
+        status.textContent = "Uploading";
+        setProgress("Uploading your document...", "Sending file...");
+
+        try {
+          const response = await fetch(form.action, {
+            method: "POST",
+            body: formData,
+            headers: { Accept: "application/json" },
+          });
+          const job = await readJsonResponse(response);
+          status.textContent = "Processing";
+          setProgress("Processing your document...", "Starting conversion...");
+          await pollStatus(job.status_url, job.download_url, Date.now());
+        } catch (error) {
+          stopPolling();
+          status.textContent = "Failed";
+          setProgress("Something went wrong", error.message, "failed");
+          setResultActions("failed");
+          setControlsDisabled(false);
+          setBusy(false);
+        }
       }
 
       fileInput.addEventListener("change", () => {
@@ -537,33 +659,26 @@
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        stopPolling();
-        setBusy(true);
-        status.textContent = "Uploading";
-        setProgress("Uploading", "Sending file...");
+        await startConversion();
+      });
 
-        try {
-          const response = await fetch(form.action, {
-            method: "POST",
-            body: new FormData(form),
-            headers: { Accept: "application/json" },
-          });
-          const job = await readJsonResponse(response);
-          status.textContent = "Processing";
-          setProgress("Processing", "Conversion started...");
-          await pollStatus(job.status_url, job.download_url, Date.now());
-        } catch (error) {
-          stopPolling();
-          status.textContent = "Failed";
-          setProgress("Failed", error.message, "failed");
-          setBusy(false);
+      downloadButton.addEventListener("click", () => {
+        if (latestDownloadUrl) {
+          downloadResult(latestDownloadUrl);
         }
+      });
+
+      newFileButton.addEventListener("click", resetForm);
+
+      retryButton.addEventListener("click", () => {
+        startConversion();
       });
 
       window.addEventListener("pageshow", () => {
         stopPolling();
         status.textContent = "Ready";
         setBusy(false);
+        setControlsDisabled(false);
       });
 
       updateEngine();

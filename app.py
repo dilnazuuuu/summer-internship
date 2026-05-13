@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from threading import Lock, Thread
@@ -86,6 +87,11 @@ def cleanup_job(job_id: str) -> None:
             job_path(job_id).unlink(missing_ok=True)
     if job and job.get("work_dir"):
         cleanup_folder(job["work_dir"])
+
+
+def cleanup_job_later(job_id: str, delay_seconds: int = 600) -> None:
+    time.sleep(delay_seconds)
+    cleanup_job(job_id)
 
 
 def cleanup_job_files(job_id: str) -> None:
@@ -353,7 +359,7 @@ def download_file(job_id: str, background_tasks: BackgroundTasks):
     if not output_file or not Path(output_file).exists():
         raise HTTPException(status_code=404, detail="Converted file is no longer available")
 
-    background_tasks.add_task(cleanup_job, job_id)
+    background_tasks.add_task(cleanup_job_later, job_id)
     return FileResponse(
         output_file,
         media_type="text/markdown",
