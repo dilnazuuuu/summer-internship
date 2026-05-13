@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -41,9 +42,9 @@ from prepare_rag_markdown_paddle import (
 BASE_DIR = Path(__file__).resolve().parent
 INDEX_HTML = BASE_DIR / "templates" / "index.html"
 PADDLE_LANGUAGES = {"ru", "kk", "en"}
+JOB_DIR = Path(os.environ.get("RAG_MD_JOB_DIR", "/tmp/rag_md_jobs"))
 
 app = FastAPI(title="Document to Markdown Converter")
-jobs = {}
 jobs_lock = Lock()
 
 
@@ -57,28 +58,56 @@ def cleanup_folder(path: str) -> None:
     shutil.rmtree(path, ignore_errors=True)
 
 
+def job_path(job_id: str) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", job_id):
+        raise HTTPException(status_code=404, detail="Job not found")
+    JOB_DIR.mkdir(parents=True, exist_ok=True)
+    return JOB_DIR / f"{job_id}.json"
+
+
+def read_job(job_id: str) -> dict | None:
+    path = job_path(job_id)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def write_job(job_id: str, job: dict) -> None:
+    path = job_path(job_id)
+    temp_path = path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(job), encoding="utf-8")
+    temp_path.replace(path)
+
+
 def cleanup_job(job_id: str) -> None:
     with jobs_lock:
-        job = jobs.pop(job_id, None)
+        job = read_job(job_id)
+        if job:
+            job_path(job_id).unlink(missing_ok=True)
     if job and job.get("work_dir"):
         cleanup_folder(job["work_dir"])
 
 
 def cleanup_job_files(job_id: str) -> None:
     with jobs_lock:
-        job = jobs.get(job_id)
+        job = read_job(job_id)
         work_dir = job.get("work_dir") if job else None
         if job:
             job["work_dir"] = None
+            write_job(job_id, job)
     if work_dir:
         cleanup_folder(work_dir)
 
 
 def update_job(job_id: str, **updates) -> None:
     with jobs_lock:
-        job = jobs.get(job_id)
+        job = read_job(job_id)
         if job:
             job.update(updates)
+            write_job(job_id, job)
 
 
 def build_standard_config(input_file: Path) -> dict:
@@ -247,13 +276,17 @@ async def convert_document(
         raise
 
     with jobs_lock:
-        jobs[job_id] = {
-            "status": "processing",
-            "work_dir": str(work_dir),
-            "file": None,
-            "error": None,
-            "filename": filename,
-        }
+        write_job(
+            job_id,
+            {
+                "job_id": job_id,
+                "status": "processing",
+                "work_dir": str(work_dir),
+                "file": None,
+                "error": None,
+                "filename": filename,
+            },
+        )
 
     Thread(
         target=run_conversion,
@@ -272,7 +305,7 @@ async def convert_document(
 @app.get("/status/{job_id}")
 def get_status(job_id: str):
     with jobs_lock:
-        job = jobs.get(job_id)
+        job = read_job(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         return {
@@ -286,7 +319,7 @@ def get_status(job_id: str):
 @app.get("/download/{job_id}")
 def download_file(job_id: str, background_tasks: BackgroundTasks):
     with jobs_lock:
-        job = jobs.get(job_id)
+        job = read_job(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         if job.get("status") != "done":
