@@ -127,6 +127,12 @@ def configure_paddle_pipeline(args):
     _PADDLE_PIPELINE = PPStructureV3(
         lang=args.lang,
         device=args.device,
+        use_doc_orientation_classify=args.use_doc_orientation_classify,
+        use_doc_unwarping=args.use_doc_unwarping,
+        use_textline_orientation=args.use_textline_orientation,
+        use_seal_recognition=args.use_seal_recognition,
+        use_table_recognition=args.use_table_recognition,
+        use_formula_recognition=args.use_formula_recognition,
     )
 
 
