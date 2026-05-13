@@ -78,12 +78,14 @@ def pdf_page_count(src: Path) -> int:
         return 0
 
 
-def paddle_pdf_ocr_to_raw_markdown(src: Path, args) -> str:
+def paddle_pdf_ocr_to_raw_markdown(src: Path, args, progress_callback=None) -> str:
     page_count = pdf_page_count(src)
     if page_count <= 0:
         raise ValueError("PDF has no pages or could not be opened")
 
     print(f"OCR started: {src.name} ({page_count} pages)", flush=True)
+    if progress_callback:
+        progress_callback(0, page_count)
     parts = [f"# {src.stem}"]
     for page_num in range(1, page_count + 1):
         print(f"OCR page {page_num}/{page_count}: {src.name}", flush=True)
@@ -105,6 +107,8 @@ def paddle_pdf_ocr_to_raw_markdown(src: Path, args) -> str:
             text = ocr_image_to_text(image, f"{src.name} page {page_num}", args)
             if text:
                 parts.append(f"## Страница {page_num}\n\n{text}")
+            if progress_callback:
+                progress_callback(page_num, page_count)
         finally:
             del image
             del images
@@ -113,30 +117,34 @@ def paddle_pdf_ocr_to_raw_markdown(src: Path, args) -> str:
     return "\n\n".join(parts)
 
 
-def paddle_image_ocr_to_raw_markdown(src: Path, args) -> str:
+def paddle_image_ocr_to_raw_markdown(src: Path, args, progress_callback=None) -> str:
+    if progress_callback:
+        progress_callback(0, 1)
     print(f"OCR started: {src.name}", flush=True)
     text = ocr_image_to_text(str(src), src.name, args)
     print(f"OCR finished: {src.name}", flush=True)
+    if progress_callback:
+        progress_callback(1, 1)
     if not text:
         return f"# {src.stem}"
     return f"# {src.stem}\n\n{text}"
 
 
-def paddle_to_raw_markdown(src: Path, args) -> str:
+def paddle_to_raw_markdown(src: Path, args, progress_callback=None) -> str:
     if src.suffix.lower() == ".pdf":
-        return paddle_pdf_ocr_to_raw_markdown(src, args)
-    return paddle_image_ocr_to_raw_markdown(src, args)
+        return paddle_pdf_ocr_to_raw_markdown(src, args, progress_callback)
+    return paddle_image_ocr_to_raw_markdown(src, args, progress_callback)
 
 
-def convert_file_to_raw_markdown(src: Path, args, office_config: dict) -> tuple[str, str]:
+def convert_file_to_raw_markdown(src: Path, args, office_config: dict, progress_callback=None) -> tuple[str, str]:
     ext = src.suffix.lower()
     if ext in PADDLE_EXTENSIONS:
-        return paddle_to_raw_markdown(src, args), "tesseract"
+        return paddle_to_raw_markdown(src, args, progress_callback), "tesseract"
     raw, mode = convert_to_raw_markdown(src, office_config)
     return raw, mode
 
 
-def process_file(src: Path, input_dir: Path, output_dir: Path, args, office_config: dict):
+def process_file(src: Path, input_dir: Path, output_dir: Path, args, office_config: dict, progress_callback=None):
     empty_stats = {
         "footers_removed": 0,
         "paras_dropped": 0,
@@ -154,7 +162,7 @@ def process_file(src: Path, input_dir: Path, output_dir: Path, args, office_conf
         if out_file.exists() and out_file.stat().st_size > 0 and not args.overwrite:
             return str(src), "skip", "exists", empty_stats
 
-        raw_markdown, mode = convert_file_to_raw_markdown(src, args, office_config)
+        raw_markdown, mode = convert_file_to_raw_markdown(src, args, office_config, progress_callback)
         cleaned, stats = clean_markdown(raw_markdown, src.stem)
         if not cleaned.strip():
             raise ValueError("Resulting markdown is empty after Tesseract/cleaning")

@@ -107,6 +107,18 @@ def update_job(job_id: str, **updates) -> None:
             write_job(job_id, job)
 
 
+def update_job_progress(job_id: str, current_page: int, total_pages: int) -> None:
+    percent = 0
+    if total_pages > 0:
+        percent = round((current_page / total_pages) * 100)
+    update_job(
+        job_id,
+        current_page=current_page,
+        total_pages=total_pages,
+        progress_percent=max(0, min(100, percent)),
+    )
+
+
 def build_standard_config(input_file: Path) -> dict:
     args = argparse.Namespace(
         overwrite=True,
@@ -187,6 +199,9 @@ def run_conversion(job_id, input_file, input_dir, output_dir, engine, args, offi
                 config,
             )
         else:
+            def progress_callback(current_page: int, total_pages: int) -> None:
+                update_job_progress(job_id, current_page, total_pages)
+
             if input_file.suffix.lower() in {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}:
                 try:
                     if args.paddle_mode == "structure":
@@ -202,6 +217,7 @@ def run_conversion(job_id, input_file, input_dir, output_dir, engine, args, offi
                 output_dir,
                 args,
                 office_config,
+                progress_callback=progress_callback,
             )
 
         if status != "ok":
@@ -215,7 +231,12 @@ def run_conversion(job_id, input_file, input_dir, output_dir, engine, args, offi
             cleanup_job_files(job_id)
             return
 
-        update_job(job_id, status="done", file=str(markdown_file))
+        job = read_job(job_id) or {}
+        done_updates = {"status": "done", "file": str(markdown_file), "progress_percent": 100}
+        total_pages = job.get("total_pages")
+        if total_pages:
+            done_updates["current_page"] = total_pages
+        update_job(job_id, **done_updates)
     except Exception as exc:
         update_job(job_id, status="failed", error=str(exc))
         cleanup_job_files(job_id)
@@ -282,6 +303,9 @@ async def convert_document(
                 "file": None,
                 "error": None,
                 "filename": filename,
+                "current_page": 0,
+                "total_pages": None,
+                "progress_percent": 0,
             },
         )
 
@@ -309,6 +333,9 @@ def get_status(job_id: str):
             "job_id": job_id,
             "status": job.get("status"),
             "error": job.get("error"),
+            "current_page": job.get("current_page"),
+            "total_pages": job.get("total_pages"),
+            "progress_percent": job.get("progress_percent"),
             "download_url": f"/download/{job_id}" if job.get("status") == "done" else None,
         }
 
