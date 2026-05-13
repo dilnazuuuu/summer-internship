@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 python-multipart
 tqdm
+numpy==1.26.4
 
 # PDF + docs
 pymupdf==1.24.2
