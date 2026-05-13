@@ -9,6 +9,6 @@ openpyxl
 python-pptx
 pdf2image
 pytesseract
-paddlepaddle==2.6.1
+paddlepaddle==2.6.2
 paddleocr==2.7.0.3
 opencv-python-headless
