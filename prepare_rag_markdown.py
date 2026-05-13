@@ -40,12 +40,6 @@ except ModuleNotFoundError as exc:
     MISSING_IMPORTS["openpyxl"] = exc.name
 
 try:
-    import pymupdf4llm
-except ModuleNotFoundError as exc:
-    pymupdf4llm = None
-    MISSING_IMPORTS["pymupdf4llm"] = exc.name
-
-try:
     import pytesseract
 except ModuleNotFoundError as exc:
     pytesseract = None
@@ -168,6 +162,16 @@ def pdf_has_good_text(pdf_path: Path) -> bool:
             return True
         good_pages = sum(1 for text in page_texts if is_meaningful_text(text))
         return good_pages / len(doc) >= 0.35
+
+
+def pdf_embedded_text_to_markdown(pdf_path: Path) -> str:
+    parts = [f"# {pdf_path.stem}"]
+    with fitz.open(str(pdf_path)) as doc:
+        for page_num, page in enumerate(doc, 1):
+            page_text = page.get_text("text").strip()
+            if page_text:
+                parts.append(f"## Страница {page_num}\n\n{page_text}")
+    return "\n\n".join(parts)
 
 
 def escape_cell(value) -> str:
@@ -551,7 +555,7 @@ def clean_markdown(text: str, doc_name: str) -> tuple[str, dict]:
 # Prefer embedded PDF text; OCR each page only when the PDF looks scanned and OCR is allowed.
 def pdf_to_raw_markdown(pdf_path: Path, no_ocr: bool, poppler_path: str | None) -> tuple[str, str]:
     if pdf_has_good_text(pdf_path):
-        markdown = pymupdf4llm.to_markdown(str(pdf_path))
+        markdown = pdf_embedded_text_to_markdown(pdf_path)
         if is_meaningful_text(markdown):
             return markdown, "pdf"
         if no_ocr:
@@ -762,7 +766,7 @@ def validate_args(args, files: list[Path]) -> dict:
     errors = []
 
     missing_by_extension = {
-        ".pdf": ["fitz", "pymupdf4llm"],
+        ".pdf": ["fitz"],
         ".docx": ["mammoth"],
         ".doc": ["mammoth"],
         ".rtf": ["mammoth"],
