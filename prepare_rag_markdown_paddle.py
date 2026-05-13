@@ -5,11 +5,15 @@
 
 import argparse
 import html
+import numpy as np
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from html.parser import HTMLParser
 from pathlib import Path
+
+from pdf2image import convert_from_path
 
 from prepare_rag_markdown import (
     EXTENSIONS as OFFICE_EXTENSIONS,
@@ -29,6 +33,8 @@ EXTENSIONS = OFFICE_EXTENSIONS | PADDLE_EXTENSIONS
 HTML_TABLE_RE = re.compile(r"<table\b.*?</table>", re.IGNORECASE | re.DOTALL)
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 ESCAPED_NEWLINE_RE = re.compile(r"\\n")
+PDF_OCR_DPI = 200
+PADDLE_OCR_TIMEOUT_S = int(os.environ.get("PADDLE_OCR_TIMEOUT_S", "120"))
 
 _PADDLE_PIPELINE = None
 _PADDLE_TEXT_OCR = None
@@ -216,7 +222,7 @@ def paddle_to_raw_markdown(src: Path, args) -> str:
 def extract_text_from_paddle_result(result) -> str:
     lines = []
     for line in result or []:
-        if isinstance(line, list) and len(line) > 1:
+        if isinstance(line, (list, tuple)) and len(line) > 1:
             text_info = line[1]
             if isinstance(text_info, (list, tuple)) and text_info:
                 text = str(text_info[0]).strip()
@@ -225,15 +231,99 @@ def extract_text_from_paddle_result(result) -> str:
     return "\n".join(lines)
 
 
+def is_ocr_line(item) -> bool:
+    return (
+        isinstance(item, (list, tuple))
+        and len(item) > 1
+        and isinstance(item[1], (list, tuple))
+        and bool(item[1])
+        and isinstance(item[1][0], str)
+    )
+
+
+def normalize_ocr_pages(output) -> list:
+    if not output:
+        return []
+    if all(is_ocr_line(item) for item in output):
+        return [output]
+    return [page or [] for page in output]
+
+
+def run_ocr_with_timeout(ocr, image, args, label: str):
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(ocr.ocr, image, cls=args.use_textline_orientation)
+    try:
+        return future.result(timeout=PADDLE_OCR_TIMEOUT_S)
+    except FutureTimeoutError as exc:
+        future.cancel()
+        raise TimeoutError(f"OCR timeout after {PADDLE_OCR_TIMEOUT_S}s on {label}") from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def ocr_image_to_text(ocr, image, args, label: str) -> str:
+    if hasattr(image, "convert"):
+        image = np.array(image.convert("RGB"))
+    output = run_ocr_with_timeout(ocr, image, args, label)
+    pages = normalize_ocr_pages(output)
+    if not pages:
+        return ""
+    return strip_html_noise(extract_text_from_paddle_result(pages[0]))
+
+
+def pdf_page_count(src: Path) -> int:
+    try:
+        import fitz
+
+        with fitz.open(str(src)) as doc:
+            return len(doc)
+    except Exception:
+        return 0
+
+
+def paddle_pdf_ocr_to_raw_markdown(src: Path, args) -> str:
+    ocr = get_text_ocr(args)
+    page_count = pdf_page_count(src)
+    if page_count <= 0:
+        raise ValueError("PDF has no pages or could not be opened")
+
+    print(f"OCR started: {src.name} ({page_count} pages)", flush=True)
+    parts = [f"# {src.stem}"]
+    for page_num in range(1, page_count + 1):
+        print(f"OCR page {page_num}/{page_count}: {src.name}", flush=True)
+        images = convert_from_path(
+            str(src),
+            dpi=PDF_OCR_DPI,
+            first_page=page_num,
+            last_page=page_num,
+            fmt="png",
+            thread_count=1,
+            timeout=PADDLE_OCR_TIMEOUT_S,
+        )
+        if not images:
+            continue
+        text = ocr_image_to_text(ocr, images[0], args, f"{src.name} page {page_num}")
+        if text:
+            parts.append(f"## Страница {page_num}\n\n{text}")
+        del images
+    print(f"OCR finished: {src.name}", flush=True)
+    return "\n\n".join(parts)
+
+
 # Plain OCR mode is simpler than structure mode: read page text and label each page.
 def paddle_text_ocr_to_raw_markdown(src: Path, args) -> str:
+    if src.suffix.lower() == ".pdf":
+        return paddle_pdf_ocr_to_raw_markdown(src, args)
+
     ocr = get_text_ocr(args)
-    output = ocr.ocr(str(src))
+    print(f"OCR started: {src.name}", flush=True)
+    output = run_ocr_with_timeout(ocr, str(src), args, src.name)
     parts = [f"# {src.stem}"]
-    for page_num, result in enumerate(output, 1):
+    for page_num, result in enumerate(normalize_ocr_pages(output), 1):
         text = strip_html_noise(extract_text_from_paddle_result(result))
         if text:
             parts.append(f"## Страница {page_num}\n\n{text}")
+    print(f"OCR finished: {src.name}", flush=True)
     return "\n\n".join(parts)
 
 

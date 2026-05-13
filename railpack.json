@@ -8,7 +8,8 @@
       "libstdc++6",
       "libsm6",
       "libxext6",
-      "libxrender1"
+      "libxrender1",
+      "poppler-utils"
     ]
   }
 }
