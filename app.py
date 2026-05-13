@@ -18,9 +18,6 @@ os.environ["OMP_NUM_THREADS"] = "1"
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 
-# Keep PaddleOCR/PaddleX cache in a writable temp folder for local and hosted runs.
-os.environ.setdefault("PADDLE_PDX_CACHE_HOME", "/tmp/paddlex-cache")
-
 from prepare_rag_markdown import (
     EXTENSIONS as STANDARD_EXTENSIONS,
     process_file as process_standard_file,
@@ -133,7 +130,7 @@ def build_paddle_args(
     device: str,
 ) -> argparse.Namespace:
     if paddle_mode not in {"structure", "ocr"}:
-        raise HTTPException(status_code=400, detail="Invalid PaddleOCR mode.")
+        raise HTTPException(status_code=400, detail="Invalid OCR mode.")
     if device not in {"cpu", "gpu"}:
         raise HTTPException(status_code=400, detail="Invalid OCR device.")
     if lang not in PADDLE_LANGUAGES:

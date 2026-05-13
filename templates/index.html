@@ -269,7 +269,7 @@
             Converter
             <select id="engine" name="engine">
               <option value="standard">Standard</option>
-              <option value="paddle">EasyOCR</option>
+              <option value="paddle">Tesseract OCR</option>
             </select>
           </label>
 
@@ -318,7 +318,7 @@
           note.textContent = "Standard is best for PDFs and Office documents with selectable text.";
           return;
         }
-        note.textContent = "EasyOCR is the reliable mode for scans, images, and non-selectable PDFs.";
+        note.textContent = "Tesseract OCR is the lightweight mode for scans, images, and non-selectable PDFs.";
       }
 
       fileInput.addEventListener("change", () => {

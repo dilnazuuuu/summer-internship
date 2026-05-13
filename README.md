@@ -28,18 +28,18 @@ uvicorn main:app --host 0.0.0.0 --port $PORT
 `main.py` exports the FastAPI app for Railway and other platforms that expect
 that default entry point.
 
-## PaddleOCR mode
+## Tesseract OCR mode
 
-PaddleOCR dependencies are included in `requirements.txt` so Railway and local
-setups use one dependency list. Use `PaddleOCR` in the web form for scanned PDFs
-and image files.
+Tesseract dependencies are included in `requirements.txt` and `railpack.json` so
+Railway and local setups use one dependency list. Use `Tesseract OCR` in the web
+form for scanned PDFs and image files.
 
-For local testing, choose `OCR text` first. `Structure` mode is heavier because
-it loads extra layout, table, and formula models.
+For local testing, make sure the `tesseract` binary is installed and available
+in `PATH`.
 
 ## Files
 
 - `app.py`: FastAPI web wrapper.
 - `templates/index.html`: Upload/download page.
 - `prepare_rag_markdown.py`: Standard PDF/Office/Markdown converter.
-- `prepare_rag_markdown_paddle.py`: PaddleOCR converter for scans/images.
+- `prepare_rag_markdown_paddle.py`: Tesseract converter for scans/images.

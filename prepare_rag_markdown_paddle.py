@@ -1,15 +1,14 @@
-# Extends prepare_rag_markdown.py with EasyOCR support for scanned PDFs and images.
-# Office-style files still use the base script; image/PDF inputs use EasyOCR text recognition.
+# Extends prepare_rag_markdown.py with Tesseract support for scanned PDFs and images.
+# Office-style files still use the base script; image/PDF inputs use Tesseract OCR.
 # The old "paddle" names are kept in public APIs so app.py and old CLI commands keep working.
 
 import argparse
 import gc
-import numpy as np
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
 
+import pytesseract
 from pdf2image import convert_from_path
 
 from prepare_rag_markdown import (
@@ -27,93 +26,37 @@ PADDLE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", "
 EXTENSIONS = OFFICE_EXTENSIONS | PADDLE_EXTENSIONS
 PDF_OCR_DPI = int(os.environ.get("OCR_PDF_DPI", "100"))
 PADDLE_OCR_TIMEOUT_S = int(os.environ.get("PADDLE_OCR_TIMEOUT_S", "120"))
-EASYOCR_MODEL_DIR = Path(os.environ.get("EASYOCR_MODEL_DIR", "/tmp/easyocr"))
+TESSERACT_CONFIG = os.environ.get("TESSERACT_CONFIG", "--psm 6")
 
 LANGUAGE_MAP = {
-    "ru": ["ru", "en"],
-    # EasyOCR 1.7.2 does not ship a Kazakh model, so use Cyrillic-compatible
-    # Russian recognition plus English as the practical fallback.
-    "kk": ["ru", "en"],
-    "en": ["en"],
+    "ru": "rus+eng",
+    "kk": "rus+eng",
+    "en": "eng",
 }
-
-_EASYOCR_READERS = {}
-
-
-def reader_key(args) -> tuple[str, str]:
-    return (getattr(args, "lang", "ru"), getattr(args, "device", "cpu"))
-
-
-def create_easyocr_reader(easyocr, languages: list[str], use_gpu: bool):
-    EASYOCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    user_network_dir = EASYOCR_MODEL_DIR / "user_network"
-    user_network_dir.mkdir(parents=True, exist_ok=True)
-    return easyocr.Reader(
-        languages,
-        gpu=use_gpu,
-        model_storage_directory=str(EASYOCR_MODEL_DIR),
-        user_network_directory=str(user_network_dir),
-        verbose=False,
-    )
-
-
-def get_text_ocr(args):
-    key = reader_key(args)
-    if key in _EASYOCR_READERS:
-        return _EASYOCR_READERS[key]
-
-    try:
-        import easyocr
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "EasyOCR is not installed. Install it first: python -m pip install easyocr"
-        ) from exc
-
-    lang_code = getattr(args, "lang", "ru")
-    languages = LANGUAGE_MAP.get(lang_code, ["ru", "en"])
-    use_gpu = getattr(args, "device", "cpu") == "gpu"
-
-    reader = create_easyocr_reader(easyocr, languages, use_gpu)
-
-    _EASYOCR_READERS[key] = reader
-    return reader
 
 
 def configure_paddle_pipeline(args):
-    # Compatibility no-op. EasyOCR initialises lazily in get_text_ocr().
+    # Compatibility no-op. Tesseract does not need model initialisation.
     return None
 
 
-def extract_text_from_easyocr_result(result) -> str:
-    lines = []
-    for item in result or []:
-        if isinstance(item, (list, tuple)) and len(item) >= 2:
-            text = str(item[1]).strip()
-            if text:
-                lines.append(text)
-    return "\n".join(lines)
+def tesseract_lang(args) -> str:
+    return LANGUAGE_MAP.get(getattr(args, "lang", "ru"), "rus+eng")
 
 
-def run_ocr_with_timeout(reader, image, label: str):
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(reader.readtext, image)
+def ocr_image_to_text(image, label: str, args) -> str:
     try:
-        return future.result(timeout=PADDLE_OCR_TIMEOUT_S) or []
-    except FutureTimeoutError as exc:
-        future.cancel()
-        raise TimeoutError(f"OCR timeout after {PADDLE_OCR_TIMEOUT_S}s on {label}") from exc
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
-
-
-def ocr_image_to_text(reader, image, label: str) -> str:
-    if hasattr(image, "convert"):
-        image = np.array(image.convert("RGB"), dtype=np.uint8)
-    else:
-        image = np.array(image, dtype=np.uint8)
-    image = np.ascontiguousarray(image)
-    output = run_ocr_with_timeout(reader, image, label)
-    return extract_text_from_easyocr_result(output)
+        if hasattr(image, "convert"):
+            image = image.convert("RGB")
+        text = pytesseract.image_to_string(
+            image,
+            lang=tesseract_lang(args),
+            config=TESSERACT_CONFIG,
+            timeout=PADDLE_OCR_TIMEOUT_S,
+        )
+        return text.strip()
+    except Exception as exc:
+        raise RuntimeError(f"OCR failed on {label}: {exc}") from exc
 
 
 def pdf_page_count(src: Path) -> int:
@@ -127,7 +70,6 @@ def pdf_page_count(src: Path) -> int:
 
 
 def paddle_pdf_ocr_to_raw_markdown(src: Path, args) -> str:
-    reader = get_text_ocr(args)
     page_count = pdf_page_count(src)
     if page_count <= 0:
         raise ValueError("PDF has no pages or could not be opened")
@@ -151,7 +93,7 @@ def paddle_pdf_ocr_to_raw_markdown(src: Path, args) -> str:
             if not images:
                 continue
             image = images[0]
-            text = ocr_image_to_text(reader, image, f"{src.name} page {page_num}")
+            text = ocr_image_to_text(image, f"{src.name} page {page_num}", args)
             if text:
                 parts.append(f"## Страница {page_num}\n\n{text}")
         finally:
@@ -163,9 +105,8 @@ def paddle_pdf_ocr_to_raw_markdown(src: Path, args) -> str:
 
 
 def paddle_image_ocr_to_raw_markdown(src: Path, args) -> str:
-    reader = get_text_ocr(args)
     print(f"OCR started: {src.name}", flush=True)
-    text = ocr_image_to_text(reader, str(src), src.name)
+    text = ocr_image_to_text(str(src), src.name, args)
     print(f"OCR finished: {src.name}", flush=True)
     if not text:
         return f"# {src.stem}"
@@ -181,7 +122,7 @@ def paddle_to_raw_markdown(src: Path, args) -> str:
 def convert_file_to_raw_markdown(src: Path, args, office_config: dict) -> tuple[str, str]:
     ext = src.suffix.lower()
     if ext in PADDLE_EXTENSIONS:
-        return paddle_to_raw_markdown(src, args), "easyocr"
+        return paddle_to_raw_markdown(src, args), "tesseract"
     raw, mode = convert_to_raw_markdown(src, office_config)
     return raw, mode
 
@@ -207,7 +148,7 @@ def process_file(src: Path, input_dir: Path, output_dir: Path, args, office_conf
         raw_markdown, mode = convert_file_to_raw_markdown(src, args, office_config)
         cleaned, stats = clean_markdown(raw_markdown, src.stem)
         if not cleaned.strip():
-            raise ValueError("Resulting markdown is empty after EasyOCR/cleaning")
+            raise ValueError("Resulting markdown is empty after Tesseract/cleaning")
 
         out_file.write_text(cleaned, encoding="utf-8")
         return str(src), "ok", mode, stats
@@ -217,7 +158,7 @@ def process_file(src: Path, input_dir: Path, output_dir: Path, args, office_conf
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Convert documents to clean RAG Markdown using EasyOCR."
+        description="Convert documents to clean RAG Markdown using Tesseract."
     )
     parser.add_argument("--input", "-i", required=True, help="Input folder with source files.")
     parser.add_argument("--output", "-o", required=True, help="Output folder for .md files.")
@@ -253,7 +194,7 @@ def main():
     args = parse_args()
     input_dir = Path(args.input).expanduser().resolve()
     output_dir = Path(args.output).expanduser().resolve()
-    failed_log = Path(args.failed_log).expanduser().resolve() if args.failed_log else output_dir / "failed_easyocr_convert.txt"
+    failed_log = Path(args.failed_log).expanduser().resolve() if args.failed_log else output_dir / "failed_tesseract_convert.txt"
 
     if not input_dir.exists():
         print(f"ERROR: input folder does not exist: {input_dir}", file=sys.stderr)
@@ -278,16 +219,11 @@ def main():
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Files: {len(files)} | OCR: EasyOCR | lang: {args.lang} | device: {args.device} | workers: 1")
+    print(f"Files: {len(files)} | OCR: Tesseract | lang: {args.lang} | workers: 1")
     if not files:
         print(f"Output: {output_dir}")
         print("No supported files found.")
         sys.exit(0)
-
-    if any(file.suffix.lower() in PADDLE_EXTENSIONS for file in files):
-        print("Loading EasyOCR model...", flush=True)
-        get_text_ocr(args)
-        print("EasyOCR model ready.", flush=True)
 
     ok = skip = fail = 0
     totals = {

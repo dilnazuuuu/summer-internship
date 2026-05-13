@@ -2,7 +2,6 @@ fastapi
 uvicorn[standard]
 python-multipart
 tqdm
-numpy==1.26.4
 
 # PDF + docs
 pymupdf==1.24.2
@@ -11,7 +10,3 @@ openpyxl
 python-pptx
 pdf2image
 pytesseract
-
-# OCR
-easyocr>=1.7.1,<2
-opencv-python-headless>=4.8.0,<5

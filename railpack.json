@@ -2,14 +2,10 @@
   "$schema": "https://schema.railpack.com",
   "deploy": {
     "aptPackages": [
-      "libgl1",
-      "libglib2.0-0",
-      "libgomp1",
-      "libstdc++6",
-      "libsm6",
-      "libxext6",
-      "libxrender1",
-      "poppler-utils"
+      "poppler-utils",
+      "tesseract-ocr",
+      "tesseract-ocr-eng",
+      "tesseract-ocr-rus"
     ]
   }
 }
