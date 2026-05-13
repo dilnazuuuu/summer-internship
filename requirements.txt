@@ -4,7 +4,7 @@ python-multipart
 tqdm
 
 # PDF + docs
-pymupdf==1.20.2
+pymupdf==1.24.2
 mammoth
 openpyxl
 python-pptx
@@ -13,5 +13,5 @@ pytesseract
 
 # OCR
 paddlepaddle==2.6.2
-paddleocr==2.7.0.3
+paddleocr==2.7.3
 opencv-python-headless
