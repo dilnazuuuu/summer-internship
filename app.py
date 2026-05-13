@@ -11,7 +11,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadF
 from fastapi.responses import FileResponse, HTMLResponse
 
 # Keep PaddleOCR/PaddleX cache in a writable temp folder for local and hosted runs.
-os.environ.setdefault("PADDLE_PDX_CACHE_HOME", "/private/tmp/paddlex-cache")
+os.environ.setdefault("PADDLE_PDX_CACHE_HOME", "/tmp/paddlex-cache")
 
 from prepare_rag_markdown import (
     EXTENSIONS as STANDARD_EXTENSIONS,
@@ -77,6 +77,10 @@ def build_paddle_args(
     if lang not in PADDLE_LANGUAGES:
         raise HTTPException(status_code=400, detail="Invalid OCR language.")
 
+    # Force lightweight OCR mode for hosted deploys; structure mode is too heavy
+    # for the current Railway setup.
+    paddle_mode = "ocr"
+
     return argparse.Namespace(
         overwrite=True,
         libreoffice=None,
@@ -88,7 +92,7 @@ def build_paddle_args(
         use_textline_orientation=False,
         use_table_recognition=True,
         use_seal_recognition=False,
-        use_formula_recognition=True,
+        use_formula_recognition=False,
     )
 
 
