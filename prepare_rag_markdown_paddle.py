@@ -149,10 +149,9 @@ def get_text_ocr(args):
 
         _PADDLE_TEXT_OCR = PaddleOCR(
             lang=args.lang,
-            device=args.device,
-            use_doc_orientation_classify=args.use_doc_orientation_classify,
-            use_doc_unwarping=args.use_doc_unwarping,
-            use_textline_orientation=args.use_textline_orientation,
+            use_gpu=args.device == "gpu",
+            use_angle_cls=args.use_textline_orientation,
+            show_log=False,
         )
     return _PADDLE_TEXT_OCR
 
@@ -215,31 +214,21 @@ def paddle_to_raw_markdown(src: Path, args) -> str:
 
 
 def extract_text_from_paddle_result(result) -> str:
-    json_info = getattr(result, "json", None)
-    if isinstance(json_info, dict):
-        res = json_info.get("res", {})
-        rec_texts = res.get("rec_texts")
-        if rec_texts:
-            return "\n".join(str(text) for text in rec_texts if str(text).strip())
-
-        ocr_res = res.get("ocr_res")
-        if isinstance(ocr_res, dict) and ocr_res.get("rec_texts"):
-            return "\n".join(str(text) for text in ocr_res["rec_texts"] if str(text).strip())
-
-    if isinstance(result, dict):
-        rec_texts = result.get("rec_texts") or result.get("text")
-        if isinstance(rec_texts, list):
-            return "\n".join(str(text) for text in rec_texts if str(text).strip())
-        if isinstance(rec_texts, str):
-            return rec_texts
-
-    return str(result)
+    lines = []
+    for line in result or []:
+        if isinstance(line, list) and len(line) > 1:
+            text_info = line[1]
+            if isinstance(text_info, (list, tuple)) and text_info:
+                text = str(text_info[0]).strip()
+                if text:
+                    lines.append(text)
+    return "\n".join(lines)
 
 
 # Plain OCR mode is simpler than structure mode: read page text and label each page.
 def paddle_text_ocr_to_raw_markdown(src: Path, args) -> str:
     ocr = get_text_ocr(args)
-    output = ocr.predict(input=str(src))
+    output = ocr.ocr(str(src))
     parts = [f"# {src.stem}"]
     for page_num, result in enumerate(output, 1):
         text = strip_html_noise(extract_text_from_paddle_result(result))
