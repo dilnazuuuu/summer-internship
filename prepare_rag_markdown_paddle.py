@@ -3,6 +3,7 @@
 # The old "paddle" names are kept in public APIs so app.py and old CLI commands keep working.
 
 import argparse
+import gc
 import numpy as np
 import os
 import sys
@@ -24,7 +25,7 @@ os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 PADDLE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 EXTENSIONS = OFFICE_EXTENSIONS | PADDLE_EXTENSIONS
-PDF_OCR_DPI = int(os.environ.get("OCR_PDF_DPI", "150"))
+PDF_OCR_DPI = int(os.environ.get("OCR_PDF_DPI", "100"))
 PADDLE_OCR_TIMEOUT_S = int(os.environ.get("PADDLE_OCR_TIMEOUT_S", "120"))
 EASYOCR_MODEL_DIR = Path(os.environ.get("EASYOCR_MODEL_DIR", "/tmp/easyocr"))
 
@@ -135,21 +136,28 @@ def paddle_pdf_ocr_to_raw_markdown(src: Path, args) -> str:
     parts = [f"# {src.stem}"]
     for page_num in range(1, page_count + 1):
         print(f"OCR page {page_num}/{page_count}: {src.name}", flush=True)
-        images = convert_from_path(
-            str(src),
-            dpi=PDF_OCR_DPI,
-            first_page=page_num,
-            last_page=page_num,
-            fmt="png",
-            thread_count=1,
-            timeout=PADDLE_OCR_TIMEOUT_S,
-        )
-        if not images:
-            continue
-        text = ocr_image_to_text(reader, images[0], f"{src.name} page {page_num}")
-        if text:
-            parts.append(f"## Страница {page_num}\n\n{text}")
-        del images
+        images = []
+        image = None
+        try:
+            images = convert_from_path(
+                str(src),
+                dpi=PDF_OCR_DPI,
+                first_page=page_num,
+                last_page=page_num,
+                fmt="png",
+                thread_count=1,
+                timeout=PADDLE_OCR_TIMEOUT_S,
+            )
+            if not images:
+                continue
+            image = images[0]
+            text = ocr_image_to_text(reader, image, f"{src.name} page {page_num}")
+            if text:
+                parts.append(f"## Страница {page_num}\n\n{text}")
+        finally:
+            del image
+            del images
+            gc.collect()
     print(f"OCR finished: {src.name}", flush=True)
     return "\n\n".join(parts)
 
