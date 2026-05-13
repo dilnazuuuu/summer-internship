@@ -13,6 +13,5 @@ pdf2image
 pytesseract
 
 # OCR
-paddlepaddle==2.6.2
-paddleocr==2.7.3
-opencv-python-headless
+easyocr>=1.7.1,<2
+opencv-python-headless>=4.8.0,<5

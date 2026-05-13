@@ -269,17 +269,11 @@
             Converter
             <select id="engine" name="engine">
               <option value="standard">Standard</option>
-              <option value="paddle">PaddleOCR</option>
+              <option value="paddle">EasyOCR</option>
             </select>
           </label>
 
-          <label class="paddle-field hidden">
-            Paddle mode
-            <select id="paddle-mode" name="paddle_mode">
-              <option value="ocr">OCR text</option>
-              <option value="structure">Structure (advanced)</option>
-            </select>
-          </label>
+          <input id="paddle-mode" name="paddle_mode" type="hidden" value="ocr" />
 
           <label class="paddle-field hidden">
             Language
@@ -324,9 +318,7 @@
           note.textContent = "Standard is best for PDFs and Office documents with selectable text.";
           return;
         }
-        note.textContent = paddleMode.value === "structure"
-          ? "Structure tries to preserve layout and tables, but it is much heavier and needs a stronger server."
-          : "OCR text is the reliable PaddleOCR mode for scans, images, and non-selectable PDFs.";
+        note.textContent = "EasyOCR is the reliable mode for scans, images, and non-selectable PDFs.";
       }
 
       fileInput.addEventListener("change", () => {
@@ -334,7 +326,6 @@
       });
 
       engine.addEventListener("change", updateEngine);
-      paddleMode.addEventListener("change", updateEngine);
 
       form.addEventListener("submit", () => {
         status.textContent = "Converting";
