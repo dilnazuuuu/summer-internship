@@ -8,6 +8,7 @@ import os
 import sys
 from pathlib import Path
 
+from PIL import Image, ImageOps
 import pytesseract
 from pdf2image import convert_from_path
 
@@ -24,13 +25,13 @@ os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 PADDLE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 EXTENSIONS = OFFICE_EXTENSIONS | PADDLE_EXTENSIONS
-PDF_OCR_DPI = int(os.environ.get("OCR_PDF_DPI", "100"))
+PDF_OCR_DPI = int(os.environ.get("OCR_PDF_DPI", "200"))
 PADDLE_OCR_TIMEOUT_S = int(os.environ.get("PADDLE_OCR_TIMEOUT_S", "120"))
-TESSERACT_CONFIG = os.environ.get("TESSERACT_CONFIG", "--psm 6")
+TESSERACT_CONFIG = os.environ.get("TESSERACT_CONFIG", "--oem 1 --psm 4")
 
 LANGUAGE_MAP = {
     "ru": "rus+eng",
-    "kk": "rus+eng",
+    "kk": "kaz+rus+eng",
     "en": "eng",
 }
 
@@ -44,10 +45,18 @@ def tesseract_lang(args) -> str:
     return LANGUAGE_MAP.get(getattr(args, "lang", "ru"), "rus+eng")
 
 
+def prepare_tesseract_image(image):
+    if hasattr(image, "convert"):
+        image = image.convert("RGB")
+    else:
+        image = Image.open(image).convert("RGB")
+    image = ImageOps.grayscale(image)
+    return ImageOps.autocontrast(image)
+
+
 def ocr_image_to_text(image, label: str, args) -> str:
     try:
-        if hasattr(image, "convert"):
-            image = image.convert("RGB")
+        image = prepare_tesseract_image(image)
         text = pytesseract.image_to_string(
             image,
             lang=tesseract_lang(args),

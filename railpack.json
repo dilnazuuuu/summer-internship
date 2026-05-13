@@ -5,6 +5,7 @@
       "poppler-utils",
       "tesseract-ocr",
       "tesseract-ocr-eng",
+      "tesseract-ocr-kaz",
       "tesseract-ocr-rus"
     ]
   }
