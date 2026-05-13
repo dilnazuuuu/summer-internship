@@ -33,7 +33,7 @@ EXTENSIONS = OFFICE_EXTENSIONS | PADDLE_EXTENSIONS
 HTML_TABLE_RE = re.compile(r"<table\b.*?</table>", re.IGNORECASE | re.DOTALL)
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 ESCAPED_NEWLINE_RE = re.compile(r"\\n")
-PDF_OCR_DPI = 200
+PDF_OCR_DPI = 150
 PADDLE_OCR_TIMEOUT_S = int(os.environ.get("PADDLE_OCR_TIMEOUT_S", "120"))
 
 _PADDLE_PIPELINE = None
@@ -155,8 +155,8 @@ def get_text_ocr(args):
 
         _PADDLE_TEXT_OCR = PaddleOCR(
             lang=args.lang,
-            use_gpu=args.device == "gpu",
-            use_angle_cls=args.use_textline_orientation,
+            use_gpu=False,
+            use_angle_cls=False,
             show_log=False,
         )
     return _PADDLE_TEXT_OCR
@@ -251,7 +251,7 @@ def normalize_ocr_pages(output) -> list:
 
 def run_ocr_with_timeout(ocr, image, args, label: str):
     executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(ocr.ocr, image, cls=args.use_textline_orientation)
+    future = executor.submit(ocr.ocr, image, cls=False)
     try:
         return future.result(timeout=PADDLE_OCR_TIMEOUT_S)
     except FutureTimeoutError as exc:
@@ -263,7 +263,10 @@ def run_ocr_with_timeout(ocr, image, args, label: str):
 
 def ocr_image_to_text(ocr, image, args, label: str) -> str:
     if hasattr(image, "convert"):
-        image = np.array(image.convert("RGB"))
+        image = np.array(image.convert("RGB"), dtype=np.uint8)
+    else:
+        image = np.array(image, dtype=np.uint8)
+    image = np.ascontiguousarray(image)
     output = run_ocr_with_timeout(ocr, image, args, label)
     pages = normalize_ocr_pages(output)
     if not pages:
